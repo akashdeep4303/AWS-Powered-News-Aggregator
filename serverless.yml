@@ -1,0 +1,67 @@
+service: news-aggregator
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.9
+  region: us-east-1
+  environment:
+    DYNAMODB_TABLE: ${self:service}-${sls:stage}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource: "arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
+
+functions:
+  fetchNews:
+    handler: src/functions/fetch_news.handler
+    events:
+      - schedule: rate(1 hour)
+    environment:
+      NEWS_API_KEY: ${param:NEWS_API_KEY}
+
+  getNews:
+    handler: src/functions/get_news.handler
+    events:
+      - httpApi:
+          path: /news
+          method: get
+
+  getNewsByCategory:
+    handler: src/functions/get_news_by_category.handler
+    events:
+      - httpApi:
+          path: /news/{category}
+          method: get
+
+resources:
+  Resources:
+    NewsTable:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: category
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: CategoryIndex
+            KeySchema:
+              - AttributeName: category
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST 
